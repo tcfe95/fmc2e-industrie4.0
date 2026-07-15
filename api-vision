@@ -1,0 +1,131 @@
+# -*- coding: utf-8 -*-
+"""
+Dépôt officiel du projet FMC2E - Industrie 4.0
+Module : Vision Industrielle & Tri Automatique (Axe 3)
+Frameworks : Flask v3.0, OpenCV v4.9
+"""
+
+from flask import Flask, request, jsonify
+import cv2
+import numpy as np
+import os
+import glob
+import shutil
+
+app = Flask(__name__)
+
+# Configuration des répertoires d'atelier et chemins d'archivage
+REF_PATH = "Ok/00041001_temp.jpg"
+FOLDER_OK_ARCHIVE = "Ok"
+FOLDER_KO_ARCHIVE = "KO"
+
+def process_image(img_test, img_ref):
+    """
+    Pipeline OpenCV de traitement matriciel :
+    Normalisation des dimensions, atténuation du bruit par flou Gaussien,
+    extraction différentielle absolue et filtrage morphologique (Ouverture).
+    """
+    # Alignement dimensionnel par rapport au gabarit usine
+    img_test = cv2.resize(img_test, (img_ref.shape[1], img_ref.shape[0]))
+    
+    # Réduction du bruit haute fréquence (variations lumineuses de l'atelier)
+    img_ref_blur = cv2.GaussianBlur(img_ref, (5, 5), 0)
+    img_test_blur = cv2.GaussianBlur(img_test, (5, 5), 0)
+    
+    # Calcul de la matrice différentielle absolue
+    diff = cv2.absdiff(img_ref_blur, img_test_blur)
+    
+    # Binarisation par seuillage fixe industriel
+    _, thresh = cv2.threshold(diff, 30, 255, cv2.THRESH_BINARY)
+    
+    # Opération morphologique d'ouverture pour éliminer les bruits résiduels
+    kernel = np.ones((3, 3), np.uint8)
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+    
+    # Quantification spatiale des anomalies (pixels blancs à haute intensité)
+    defect_pixels = int(np.sum(thresh == 255))
+    
+    # Arbitrage binaire selon le seuil de tolérance de la classe 3 de l'IPC-A-610
+    status = "KO" if defect_pixels > 500 else "OK"
+    
+    return status, defect_pixels
+
+@app.route('/analyze_production', methods=['POST'])
+def analyze_production():
+    """
+    Route API principale - Cycle synchrone :
+    1. Scan du répertoire de transit
+    2. Analyse différentielle OpenCV
+    3. Décision d'arbitrage et tri physique automatique
+    """
+    try:
+        data = request.get_json() or {}
+        input_folder = data.get("folder") 
+        
+        # Validation de l'existence du dossier transmis par l'orchestrateur
+        if not input_folder or not os.path.exists(input_folder):
+            return jsonify({
+                "status": "Erreur", 
+                "message": f"Le dossier '{input_folder}' est introuvable"
+            }), 400
+
+        # Chargement du gabarit de référence en niveaux de gris
+        img_ref = cv2.imread(REF_PATH, cv2.IMREAD_GRAYSCALE)
+        if img_ref is None:
+            return jsonify({
+                "status": "Erreur", 
+                "message": f"Image de référence '{REF_PATH}' introuvable"
+            }), 500
+
+        # Collecte des acquisitions de production (extensions graphiques standards)
+        extensions = ('*.jpg', '*.jpeg', '*.png')
+        image_paths = []
+        for ext in extensions:
+            image_paths.extend(glob.glob(os.path.join(input_folder, ext)))
+
+        results = []
+        for path in image_paths:
+            img_test = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            if img_test is not None:
+                filename = os.path.basename(path)
+                
+                # Execution du pipeline algorithmique
+                status, defect_pixels = process_image(img_test, img_ref)
+                
+                # Routage dynamique et routage physique des fichiers (Tri asynchrone)
+                if status == "OK":
+                    destination = os.path.join(FOLDER_OK_ARCHIVE, filename)
+                else:
+                    destination = os.path.join(FOLDER_KO_ARCHIVE, filename)
+                
+                # Déplacement atomique du fichier vers sa zone d'archivage dédiée
+                shutil.move(path, destination)
+                
+                results.append({
+                    "filename": filename,
+                    "status": status,
+                    "defects": defect_pixels,
+                    "archived_to": destination
+                })
+        
+        return jsonify({
+            "status": "Succès",
+            "total_processed": len(results),
+            "predictions": results
+        })
+
+    except Exception as e:
+        return jsonify({"status": "Erreur", "message": str(e)}), 500
+
+if __name__ == "__main__":
+    print("[INFO] Serveur de Production FMC2E actif sur le port 5000.")
+    app.run(host='0.0.0.0', port=5000)
+
+
+
+
+
+
+
+
+
