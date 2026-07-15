@@ -1,0 +1,38 @@
+// Récupération des métadonnées provenant du nœud HTTP Request de l'API Flask
+const inputData = $input.item.json;
+const predictions = inputData.predictions || [];
+
+let totalProcessed = inputData.total_processed || 0;
+let totalOk = 0;
+let totalKo = 0;
+let detailsMessage = "";
+
+// Parcours itératif des prédictions pour le décompte et le formatage des statuts
+for (const prod of predictions) {
+  if (prod.status === "OK") {
+    totalOk++;
+    detailsMessage += `✅ **${prod.filename}** : Conforme (0 défaut)\n`;
+  } else {
+    totalKo++;
+    detailsMessage += `🚨 **${prod.filename}** : **NON CONFORME** (${prod.defects} pixels défectueux)\n`;
+  }
+}
+
+// Construction de la charge utile textuelle formatée pour l'interface Discord
+let discordMessage = `⚙️ **RAPPORT AUTOMATIQUE - LIGNE FMC2E** ⚙️\n`;
+discordMessage += `====================================\n`;
+discordMessage += `📊 **Statistiques du scan :**\n`;
+discordMessage += `• Total cartes inspectées : **${totalProcessed}**\n`;
+discordMessage += `• Cartes valides (OK) : **${totalOk}**\n`;
+discordMessage += `• Cartes défectueuses (KO) : **${totalKo}**\n\n`;
+discordMessage += `📝 **Détails par fichier :**\n${detailsMessage}`;
+discordMessage += `====================================\n`;
+discordMessage += `📂 *Les fichiers ont été triés automatiquement sur le serveur.*`;
+
+// Exportation de l'objet JSON standardisé pour le nœud de sortie Discord
+return [{
+  json: {
+    message_pour_discord: discordMessage
+  }
+}];
+
