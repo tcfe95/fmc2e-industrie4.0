@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""
+Université Mundiapolis - Master DSIA
+Squelette Architectural du Livrable Intégral : Cockpit FMC2E v2.1
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+import cv2
+import os
+import joblib
+import requests
+
+# ==============================================================================
+# 1. CONFIGURATION, CORE DIRECTORIES & ALERTE DISCORD VIA WEBHOOK
+# ==============================================================================
+st.set_page_config(page_title="Cockpit FMC2E", page_icon="⚙️", layout="wide")
+
+PATH_LOGO = "/content/Capture d’écran 2026-03-09 152953.png"
+PATH_REF_IMAGE = "/content/drive/MyDrive/Projet_FMC2E/reference.jpg"
+PATH_INPUT = "/content/drive/MyDrive/Projet_FMC2E/INPUT_PRODUCTION"
+PATH_OK = "/content/drive/MyDrive/Projet_FMC2E/OK"
+PATH_KO = "/content/drive/MyDrive/Projet_FMC2E/KO"
+
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/..."
+
+def envoyer_alerte_discord(message):
+    """Module de communication asynchrone vers l'application mobile d'atelier"""
+    try:
+        data = {"username": "IA Vision controle", "content": message}
+        requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=5)
+    except Exception:
+        pass
+
+@st.cache_resource
+def load_ml_model():
+    """Mise en cache du modèle prédictif Random Forest Classifier (.pkl)"""
+    try:
+        return joblib.load("modele_qualite_fmc2e(8).pkl")
+    except Exception:
+        return None
+
+model_pack = load_ml_model()
+
+# ==============================================================================
+# 2. INTERFACE UTILISATEUR & BARRE DE NAVIGATION (USER-CENTRIC)
+# ==============================================================================
+st.sidebar.title("FMC2E Cockpit v2.1")
+st.sidebar.write("---")
+st.sidebar.success("🟢 Modèle ML Connecté") if model_pack else st.sidebar.error("🔴 Modèle Hors-ligne")
+
+selected_tab = st.sidebar.radio(
+    "Sélectionner l'axe stratégique :",
+    ["📊 AXE 1 : Business Intelligence (Rétrospective)",
+     "🔮 AXE 2 : Machine Learning (Prédictif)",
+     "⚡ AXE 3 : Automatisation & Vision (Opérationnel)"]
+)
+
+# ==============================================================================
+# 3. ROUTAGE LOGIQUE ET TRAITEMENT PAR AXE STRATÉGIQUE
+# ==============================================================================
+
+# --- AXE 1 : BUSINESS INTELLIGENCE ---
+if "AXE 1" in selected_tab:
+    st.title("📊 Axe 1 : Business Intelligence & Performance Industrielle")
+    # [Code d'affichage des KPIs d'atelier : CA, OTD (74%), Taux de conformité (37%)]
+    # [Logique Plotly : Génération dynamique du diagramme de Pareto des non-conformités]
+
+# --- AXE 2 : MACHINE LEARNING (SIMULATEUR PRÉDICTIF) ---
+elif "AXE 2" in selected_tab:
+    st.title("🔮 Axe 2 : Simulateur Prédictif d'Aide à la Décision")
+    # Collecte des paramètres via widgets Streamlit (Fournisseur, Composant, Qté, Coût)
+    
+    if st.button("🚀 Lancer l'Analyse Décisionnelle"):
+        # 1. Vectorisation des entrées au format DataFrame attendu par le Random Forest
+        # 2. Évaluation du risque : proba_ko = model_rf.predict_proba(input_df)[0][1] * 100
+        # 3. Calcul de la criticité financière : Risque Exposition CA = Valeur Lot * Proba_KO
+        # 4. Branchement de l'arbitrage automatique :
+        #    - Si Proba < 30% -> Approvisionnement validé (CONFORME)
+        #    - Si Proba entre 30% et 60% -> Vigilance + Budget préventif alloué (RETOUCHE)
+        #    - Si Proba > 60% -> Alerte Critique et blocage de flux (REBUT DIRECT)
+
+# --- AXE 3 : VISION INDUSTRIELLE OPÉRAIONNELLE (OPENCV) ---
+elif "AXE 3" in selected_tab:
+    st.title("⚡ Axe 3 : Centre de Contrôle & Vision Industrielle OpenCV")
+    # Surveillance en direct des répertoires physiques d'usine (INPUT, OK, KO)
+    
+    if st.button("⚙️ Exécuter le Cycle de Tri OpenCV"):
+        # Itération sur l'ensemble des fichiers d'acquisitions présents dans le répertoire INPUT
+        for f in files_in_input:
+            # 1. Lecture matricielle en niveaux de gris
+            img_prod = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
+            
+            # 2. Normalisation spatiale et correction de luminosité (Égalisation d'histogramme)
+            img_prod = cv2.resize(img_prod, (IMG_REF.shape[1], IMG_REF.shape[0]))
+            img_prod = cv2.equalizeHist(img_prod)
+            img_ref_norm = cv2.equalizeHist(IMG_REF)
+            
+            # 3. Corrélation croisée normalisée (Template Matching) et extraction du score
+            res = cv2.matchTemplate(img_prod, img_ref_norm, cv2.TM_CCOEFF_NORMED)
+            _, score_similarite, _, _ = cv2.minMaxLoc(res)
+            taux_conformite = score_similarite * 100
+            
+            # 4. Tri physique instantané et routage vers la passerelle Discord
+            if taux_conformite >= 90.0:
+                os.rename(filepath, os.path.join(PATH_OK, f))
+                envoyer_alerte_discord(f"✅ [OK] Pièce conforme `{f}` ({taux_conformite:.1f}%)")
+            else:
+                os.rename(filepath, os.path.join(PATH_KO, f))
+                envoyer_alerte_discord(f"🚨 [ALERTE NON-CONFORMITÉ] Éjection de `{f}` ({taux_conformite:.1f}%)")
+
+if __name__ == "__main__":
+    # Point d'entrée principal du serveur applicatif Streamlit
+    pass
